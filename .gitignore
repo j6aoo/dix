@@ -1,0 +1,50 @@
+# Binaries
+dix
+dix.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config
+.env
+.env.local
+
+# DIX data (don't commit user data)
+ledger.db
+keystore.json
+keystore.enc
+keypair.json
+
+# Anchor/Solana
+program/target/
+program/.anchor/
+program/node_modules/
+*.so
+
+# Logs
+*.log

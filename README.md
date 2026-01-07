@@ -453,4 +453,18 @@ Mas se voce quer mandar dinheiro pra qualquer lugar do mundo, sem pedir permissa
 
 ---
 
+## Sobre o desenvolvimento
+
+Vou ser transparente: esse codigo foi escrito com assistencia de IA. Mas tem uma diferenca importante entre "vibecoding" e usar IA como ferramenta.
+
+Vibecoding e quando voce joga um prompt, aceita o que vier, e reza pra funcionar. Nao foi isso que aconteceu aqui.
+
+Cada funcao foi revisada. Cada decisao de arquitetura foi questionada. Os tradeoffs foram pensados. O codigo foi testado. Quando a IA sugeria algo que nao fazia sentido pro contexto, era descartado. 
+
+A IA acelerou o desenvolvimento. Escreveu boilerplate, sugeriu estruturas, ajudou com sintaxe de bibliotecas que eu nao conhecia de cor. Mas as decisoes de design, por que Go ao inves de Rust, por que SQLite ao inves de arquivo JSON, por que nao cobrar taxa de protocolo, essas foram humanas.
+
+Se voce ta lendo isso pensando em contribuir: o codigo e legivel, os nomes fazem sentido, e a arquitetura e simples de propósito. Nao foi acidente.
+
+---
+
 MIT License - faz o que quiser com o codigo.

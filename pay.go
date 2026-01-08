@@ -5,22 +5,22 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/gagliardetto/solana-go"
 )
 
-
-func Pay(db *sql.DB, keypair solana.PrivateKey, to string, amount uint64, programID, rpcURL string) error {
+func Pay(db *sql.DB, keypair solana.PrivateKey, to string, amount uint64, token string, programID, rpcURL string) error {
 	from := keypair.PublicKey()
 	now := time.Now()
-
 
 	i := Intent{
 		ID:     mkid(from.String(), to, amount, now.Unix()),
 		From:   from.String(),
 		To:     to,
 		Amount: amount,
+		Token:  token,
 		Time:   now.Unix(),
 		Status: "pending",
 	}
@@ -34,18 +34,18 @@ func Pay(db *sql.DB, keypair solana.PrivateKey, to string, amount uint64, progra
 	if err := Save(db, i); err != nil {
 		return fmt.Errorf("save: %w", err)
 	}
-	fmt.Printf("✓ intent: %s\n", i.ID[:8])
+	fmt.Printf("intent: %s\n", i.ID[:8])
 
 	var toPubkey solana.PublicKey
 	if IsUsername(to) {
-		fmt.Printf("✓ resolving %s...\n", to)
+		fmt.Printf("resolving %s...\n", to)
 		toPubkey, err = Resolve(db, to, programID, rpcURL)
 		if err != nil {
 			i.Status = "fail"
 			Save(db, i)
 			return fmt.Errorf("resolve: %w", err)
 		}
-		fmt.Printf("✓ %s → %s\n", to, toPubkey.String()[:8]+"...")
+		fmt.Printf("%s -> %s\n", to, toPubkey.String()[:8]+"...")
 		i.ToResolved = toPubkey.String()
 	} else {
 		toPubkey, err = solana.PublicKeyFromBase58(to)
@@ -64,7 +64,7 @@ func Pay(db *sql.DB, keypair solana.PrivateKey, to string, amount uint64, progra
 	}
 
 	start := time.Now()
-	sig, err := Send(from, toPubkey, amount, keypair, rpcURL)
+	sig, err := Send(from, toPubkey, amount, token, keypair, rpcURL)
 	if err != nil {
 		i.Status = "fail"
 		Save(db, i)
@@ -74,7 +74,7 @@ func Pay(db *sql.DB, keypair solana.PrivateKey, to string, amount uint64, progra
 	i.Signature = sig
 	i.Status = "sent"
 	Save(db, i)
-	fmt.Printf("✓ tx: %s\n", sig[:16]+"...")
+	fmt.Printf("tx: %s\n", sig[:16]+"...")
 
 	if err := Confirm(sig, rpcURL, 30*time.Second); err != nil {
 		i.Status = "fail"
@@ -86,8 +86,10 @@ func Pay(db *sql.DB, keypair solana.PrivateKey, to string, amount uint64, progra
 	i.Status = "done"
 	Save(db, i)
 
-	fmt.Printf("✓ confirmed (%dms)\n", elapsed.Milliseconds())
-	fmt.Printf("%s USDC → %s\n", fmtAmount(amount), to)
+	symbol := GetTokenSymbol(token)
+	decimals := GetTokenDecimals(token)
+	fmt.Printf("confirmed (%dms)\n", elapsed.Milliseconds())
+	fmt.Printf("%s %s -> %s\n", fmtAmountDecimals(amount, decimals), symbol, to)
 
 	return nil
 }
@@ -97,11 +99,17 @@ func mkid(from, to string, amt uint64, ts int64) string {
 	return hex.EncodeToString(h[:])[:16]
 }
 
-func fmtAmount(amt uint64) string {
-	whole := amt / 1_000_000
-	frac := amt % 1_000_000
+func fmtAmountDecimals(amt uint64, decimals uint8) string {
+	divisor := uint64(math.Pow10(int(decimals)))
+	whole := amt / divisor
+	frac := amt % divisor
 	if frac == 0 {
 		return fmt.Sprintf("%d", whole)
 	}
-	return fmt.Sprintf("%d.%06d", whole, frac)
+	format := fmt.Sprintf("%%d.%%0%dd", decimals)
+	return fmt.Sprintf(format, whole, frac)
+}
+
+func FmtAmount(amt uint64, token string) string {
+	return fmtAmountDecimals(amt, GetTokenDecimals(token))
 }

@@ -10,14 +10,16 @@ import (
 	"github.com/gagliardetto/solana-go/rpc"
 )
 
-func Send(from solana.PublicKey, to solana.PublicKey, amount uint64, keypair solana.PrivateKey, rpcURL string) (string, error) {
+func Send(from solana.PublicKey, to solana.PublicKey, amount uint64, tokenKey string, keypair solana.PrivateKey, rpcURL string) (string, error) {
 	client := rpc.New(rpcURL)
-	fromATA, _, err := solana.FindAssociatedTokenAddress(from, solana.MustPublicKeyFromBase58(USDCMint))
+	mint := solana.MustPublicKeyFromBase58(GetTokenMint(tokenKey))
+
+	fromATA, _, err := solana.FindAssociatedTokenAddress(from, mint)
 	if err != nil {
 		return "", fmt.Errorf("from ATA: %w", err)
 	}
 
-	toATA, _, err := solana.FindAssociatedTokenAddress(to, solana.MustPublicKeyFromBase58(USDCMint))
+	toATA, _, err := solana.FindAssociatedTokenAddress(to, mint)
 	if err != nil {
 		return "", fmt.Errorf("to ATA: %w", err)
 	}
@@ -34,6 +36,7 @@ func Send(from solana.PublicKey, to solana.PublicKey, amount uint64, keypair sol
 	if err != nil {
 		return "", fmt.Errorf("blockhash: %w", err)
 	}
+
 	tx, err := solana.NewTransaction(
 		[]solana.Instruction{transferIx},
 		recent.Value.Blockhash,
@@ -85,10 +88,11 @@ func Confirm(sig string, rpcURL string, timeout time.Duration) error {
 	}
 }
 
-func Balance(pubkey solana.PublicKey, rpcURL string) (uint64, error) {
+func Balance(pubkey solana.PublicKey, tokenKey string, rpcURL string) (uint64, error) {
 	client := rpc.New(rpcURL)
+	mint := solana.MustPublicKeyFromBase58(GetTokenMint(tokenKey))
 
-	ata, _, err := solana.FindAssociatedTokenAddress(pubkey, solana.MustPublicKeyFromBase58(USDCMint))
+	ata, _, err := solana.FindAssociatedTokenAddress(pubkey, mint)
 	if err != nil {
 		return 0, err
 	}

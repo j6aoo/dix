@@ -19,6 +19,7 @@ func Opendb(path string) (*sql.DB, error) {
 			to_pubkey TEXT,
 			to_resolved TEXT,
 			amount INTEGER,
+			token TEXT DEFAULT 'usdc',
 			signature TEXT,
 			time INTEGER,
 			status TEXT
@@ -40,24 +41,30 @@ func Opendb(path string) (*sql.DB, error) {
 func Save(db *sql.DB, i Intent) error {
 	_, err := db.Exec(`
 		INSERT OR REPLACE INTO intents 
-		(id, from_pubkey, to_pubkey, to_resolved, amount, signature, time, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, i.ID, i.From, i.To, i.ToResolved, i.Amount, i.Signature, i.Time, i.Status)
+		(id, from_pubkey, to_pubkey, to_resolved, amount, token, signature, time, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, i.ID, i.From, i.To, i.ToResolved, i.Amount, i.Token, i.Signature, i.Time, i.Status)
 	return err
 }
 
 func Load(db *sql.DB, id string) (Intent, error) {
 	var i Intent
+	var token sql.NullString
 	err := db.QueryRow(`
-		SELECT id, from_pubkey, to_pubkey, to_resolved, amount, signature, time, status
+		SELECT id, from_pubkey, to_pubkey, to_resolved, amount, token, signature, time, status
 		FROM intents WHERE id = ?
-	`, id).Scan(&i.ID, &i.From, &i.To, &i.ToResolved, &i.Amount, &i.Signature, &i.Time, &i.Status)
+	`, id).Scan(&i.ID, &i.From, &i.To, &i.ToResolved, &i.Amount, &token, &i.Signature, &i.Time, &i.Status)
+	if token.Valid {
+		i.Token = token.String
+	} else {
+		i.Token = "usdc"
+	}
 	return i, err
 }
 
 func List(db *sql.DB, limit int) ([]Intent, error) {
 	rows, err := db.Query(`
-		SELECT id, from_pubkey, to_pubkey, to_resolved, amount, signature, time, status
+		SELECT id, from_pubkey, to_pubkey, to_resolved, amount, token, signature, time, status
 		FROM intents ORDER BY time DESC LIMIT ?
 	`, limit)
 	if err != nil {
@@ -68,9 +75,15 @@ func List(db *sql.DB, limit int) ([]Intent, error) {
 	var out []Intent
 	for rows.Next() {
 		var i Intent
-		err := rows.Scan(&i.ID, &i.From, &i.To, &i.ToResolved, &i.Amount, &i.Signature, &i.Time, &i.Status)
+		var token sql.NullString
+		err := rows.Scan(&i.ID, &i.From, &i.To, &i.ToResolved, &i.Amount, &token, &i.Signature, &i.Time, &i.Status)
 		if err != nil {
 			continue
+		}
+		if token.Valid {
+			i.Token = token.String
+		} else {
+			i.Token = "usdc"
 		}
 		out = append(out, i)
 	}

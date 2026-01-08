@@ -1,6 +1,6 @@
 # Binaries
-dix
-dix.exe
+/dix
+/dix.exe
 *.exe
 *.dll
 *.so

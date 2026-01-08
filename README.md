@@ -4,7 +4,8 @@ Sistema de pagamentos peer-to-peer em Solana com usernames legiveis. Tipo um PIX
 
 ```
 dix register joao
-dix pay joao 100
+dix pay usdc joao 100
+dix pool create vaquinha usdc 50
 ```
 
 ---
@@ -81,13 +82,17 @@ Optei por nao cobrar taxa de protocolo no registro. A maioria dos projetos cobra
 O ponto de entrada e o `cmd/dix/main.go`. Usa Cobra pra parsing de comandos, mas de forma bem minimalista. Nada de subcomandos aninhados ou flags mirabolantes.
 
 ```
-dix init           # cria carteira
-dix recover        # recupera de mnemonic
-dix register <u>   # registra username
-dix pay <to> <amt> # envia USDC
-dix balance        # mostra saldo
-dix ledger         # historico local
+dix init                       # cria carteira
+dix recover                    # recupera de mnemonic
+dix register <user>            # registra username
+dix pay <token> <to> <amount>  # envia tokens
+dix balance                    # mostra saldo
+dix ledger                     # historico local
+dix tokens                     # lista tokens suportados
+dix pool create/join/pay/...   # consorcios
 ```
+
+Tokens suportados: `usdc`, `usdt`, `btc` (wBTC), `ltc` (wLTC)
 
 Cada comando faz uma coisa so. Se der erro, printa o erro e sai com codigo 1. Nada de logs estruturados, nada de telemetria, nada de "voce quis dizer X?".
 
@@ -324,6 +329,46 @@ Por que SQLite e nao um arquivo JSON ou algo mais simples? Porque SQL resolve qu
 Por que nao Postgres ou MySQL? Porque exigiria o usuario instalar e configurar um banco. SQLite e um arquivo. Copia o arquivo, ta copiado o banco.
 
 
+## Pools (Consorcios)
+
+O sistema de pools e um consorcio P2P entre amigos. Funciona assim:
+
+1. Alguem cria um pool: `dix pool create vaquinha usdc 100`
+2. Amigos entram: `dix pool join abc123def456`
+3. O criador inicia: `dix pool start abc123def456`
+4. Todo mes cada membro paga: `dix pool pay abc123def456`
+5. O ganhador da rodada recebe tudo direto na carteira
+6. Quando todos pagaram, o ganhador confirma: `dix pool claim abc123def456`
+7. Proximo round comeca
+
+A ordem de quem ganha e definida pela ordem de entrada. O primeiro a entrar ganha a primeira rodada, o segundo ganha a segunda, etc.
+
+```
+Pool "vaquinha" (5 membros, 100 USDC/round):
+
+Round 1: todos pagam 100 USDC → joao recebe 500 USDC
+Round 2: todos pagam 100 USDC → maria recebe 500 USDC
+Round 3: todos pagam 100 USDC → pedro recebe 500 USDC
+...
+```
+
+Comandos:
+
+```
+dix pool create <name> <token> <amount>  # cria pool
+dix pool join <id>                        # entra num pool
+dix pool start <id>                       # inicia (fecha registro)
+dix pool pay <id>                         # paga sua parte
+dix pool claim <id>                       # confirma recebimento
+dix pool status <id>                      # mostra estado atual
+dix pool list                             # lista seus pools
+```
+
+Por que funciona sem smart contract de escrow? Porque os pagamentos vao direto pro ganhador da rodada. Nao tem custodia. Quem nao pagar simplesmente fica marcado como inadimplente e os outros veem.
+
+A garantia aqui e social, nao tecnica. Por isso e pra fazer com amigos, nao com estranhos. Se alguem furar, voce sabe quem foi.
+
+
 ## Tratamento de erros
 
 A filosofia aqui e: se deu erro, printa e sai. Nada de tentar recuperar, nada de retry automatico, nada de "vou tentar de novo em 5 segundos".
@@ -378,15 +423,11 @@ Vou ser honesto sobre o que nao funciona ou nao existe ainda:
 
 **Solana only**: Nao tem bridge, nao tem cross-chain, nao tem nada. So Solana mainnet (ou devnet pra teste).
 
-**USDC only**: Hardcoded. Quer mandar SOL nativo? Nao da. Quer mandar outro token? Nao da. Seria facil adicionar, mas por ora e so USDC.
-
 **CLI only**: Sem app mobile, sem interface web, sem API REST. Voce precisa de terminal. Isso limita muito o publico, mas era o que eu conseguia fazer rapido.
 
-**Sem ATA auto-create**: Se o destinatario nunca recebeu USDC antes, a transacao falha. Deveria criar a ATA automaticamente.
+**Sem ATA auto-create**: Se o destinatario nunca recebeu o token antes, a transacao falha. Deveria criar a ATA automaticamente.
 
 **Sem QR Code**: PIX tem QR Code pra facilitar. DIX nao tem nada disso ainda.
-
-**Sem cobranca**: Nao da pra criar um "link de pagamento" ou cobrar alguem. So pagamento push.
 
 **Username permanente**: Uma vez registrado, nao da pra deletar ou transferir. O owner pode ser atualizado, mas o username em si fica la pra sempre.
 

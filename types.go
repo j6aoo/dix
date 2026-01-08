@@ -29,11 +29,32 @@ type Config struct {
 	Program  string
 }
 
+type Pool struct {
+	ID           string
+	Name         string
+	Token        string
+	Contribution uint64
+	Members      []string
+	Round        int
+	CreatedAt    int64
+	Status       string
+}
+
+type PoolMember struct {
+	PoolID   string
+	Username string
+	Pubkey   string
+	Paid     bool
+	Claimed  bool
+	Order    int
+}
+
 const (
 	MainnetRPC = "https://api.mainnet-beta.solana.com"
 	DevnetRPC  = "https://api.devnet.solana.com"
 
 	RegistryProgram = ""
+	PoolProgram     = ""
 )
 
 var Tokens = map[string]TokenInfo{
@@ -48,12 +69,12 @@ var Tokens = map[string]TokenInfo{
 		Decimals: 6,
 	},
 	"btc": {
-		Mint:     "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh", // wBTC (Wormhole)
+		Mint:     "3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh",
 		Symbol:   "wBTC",
 		Decimals: 8,
 	},
 	"ltc": {
-		Mint:     "HZRCwxP2Vq9PCpPXooayhJ2bxTpo5xfpQrwB1svh332p", // wLTC (Wormhole)
+		Mint:     "HZRCwxP2Vq9PCpPXooayhJ2bxTpo5xfpQrwB1svh332p",
 		Symbol:   "wLTC",
 		Decimals: 8,
 	},

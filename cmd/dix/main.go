@@ -23,7 +23,6 @@ var (
 	keypath    = filepath.Join(configDir, "keypair.json")
 	rpcURL     = dix.DevnetRPC
 	programID  = dix.RegistryProgram
-	tokenFlag  = "usdc"
 )
 
 func main() {
@@ -33,7 +32,6 @@ func main() {
 	}
 
 	root.PersistentFlags().StringVar(&rpcURL, "rpc", dix.DevnetRPC, "Solana RPC URL")
-	root.PersistentFlags().StringVar(&tokenFlag, "token", "usdc", "token to use: usdc, usdt, btc, ltc")
 
 	root.AddCommand(initCmd())
 	root.AddCommand(registerCmd())
@@ -42,6 +40,7 @@ func main() {
 	root.AddCommand(balanceCmd())
 	root.AddCommand(recoverCmd())
 	root.AddCommand(tokensCmd())
+	root.AddCommand(poolCmd())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -289,6 +288,278 @@ func tokensCmd() *cobra.Command {
 			fmt.Println(strings.Repeat("-", 60))
 			for key, info := range dix.Tokens {
 				fmt.Printf("%-6s | %-6s | %s\n", key, info.Symbol, info.Mint[:16]+"...")
+			}
+		},
+	}
+}
+
+func poolCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pool",
+		Short: "manage pools/consorcios",
+	}
+
+	cmd.AddCommand(poolCreateCmd())
+	cmd.AddCommand(poolJoinCmd())
+	cmd.AddCommand(poolStartCmd())
+	cmd.AddCommand(poolPayCmd())
+	cmd.AddCommand(poolClaimCmd())
+	cmd.AddCommand(poolStatusCmd())
+	cmd.AddCommand(poolListCmd())
+
+	return cmd
+}
+
+func poolCreateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "create <name> <token> <contribution>",
+		Short: "create a new pool",
+		Long:  "Example: dix pool create vaquinha usdc 100",
+		Args:  cobra.ExactArgs(3),
+		Run: func(cmd *cobra.Command, args []string) {
+			name := args[0]
+			token := strings.ToLower(args[1])
+			contrib := parseAmount(args[2], token)
+
+			if _, ok := dix.Tokens[token]; !ok {
+				die(fmt.Errorf("token not supported: %s", token))
+			}
+
+			pwd := readpwd("password: ")
+			secret, err := dix.Loadwallet(keypath, pwd)
+			if err != nil {
+				die(err)
+			}
+
+			username := dix.Pubkey(secret)
+
+			db, err := dix.Opendb(dbpath)
+			if err != nil {
+				die(err)
+			}
+			defer db.Close()
+
+			pool, err := dix.CreatePool(db, name, token, contrib, username[:12])
+			if err != nil {
+				die(err)
+			}
+
+			symbol := dix.GetTokenSymbol(token)
+			fmt.Printf("pool created: %s\n", pool.ID)
+			fmt.Printf("name: %s\n", pool.Name)
+			fmt.Printf("contribution: %s %s/round\n", dix.FmtAmount(contrib, token), symbol)
+			fmt.Printf("\nshare this ID with friends: %s\n", pool.ID)
+		},
+	}
+}
+
+func poolJoinCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "join <pool-id>",
+		Short: "join an existing pool",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			poolID := args[0]
+
+			pwd := readpwd("password: ")
+			secret, err := dix.Loadwallet(keypath, pwd)
+			if err != nil {
+				die(err)
+			}
+
+			pubkey := dix.Pubkey(secret)
+
+			db, err := dix.Opendb(dbpath)
+			if err != nil {
+				die(err)
+			}
+			defer db.Close()
+
+			err = dix.JoinPool(db, poolID, pubkey[:12], pubkey)
+			if err != nil {
+				die(err)
+			}
+
+			fmt.Printf("joined pool: %s\n", poolID)
+		},
+	}
+}
+
+func poolStartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "start <pool-id>",
+		Short: "start the pool (closes registration)",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			poolID := args[0]
+
+			db, err := dix.Opendb(dbpath)
+			if err != nil {
+				die(err)
+			}
+			defer db.Close()
+
+			err = dix.StartPool(db, poolID)
+			if err != nil {
+				die(err)
+			}
+
+			fmt.Printf("pool started: %s\n", poolID)
+			fmt.Println("round 1 begins - members can now contribute")
+		},
+	}
+}
+
+func poolPayCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "pay <pool-id>",
+		Short: "pay your contribution for this round",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			poolID := args[0]
+
+			pwd := readpwd("password: ")
+			secret, err := dix.Loadwallet(keypath, pwd)
+			if err != nil {
+				die(err)
+			}
+
+			keypair := dix.ToSolanaKey(secret)
+			username := dix.Pubkey(secret)[:12]
+
+			db, err := dix.Opendb(dbpath)
+			if err != nil {
+				die(err)
+			}
+			defer db.Close()
+
+			pool, _ := dix.LoadPool(db, poolID)
+			symbol := dix.GetTokenSymbol(pool.Token)
+			fmt.Printf("paying: %s %s to round %d winner\n", dix.FmtAmount(pool.Contribution, pool.Token), symbol, pool.Round)
+
+			err = dix.ContributePool(db, poolID, username, keypair, rpcURL)
+			if err != nil {
+				die(err)
+			}
+
+			fmt.Println("contribution sent")
+		},
+	}
+}
+
+func poolClaimCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "claim <pool-id>",
+		Short: "claim your winnings (if its your turn)",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			poolID := args[0]
+
+			pwd := readpwd("password: ")
+			secret, err := dix.Loadwallet(keypath, pwd)
+			if err != nil {
+				die(err)
+			}
+
+			username := dix.Pubkey(secret)[:12]
+
+			db, err := dix.Opendb(dbpath)
+			if err != nil {
+				die(err)
+			}
+			defer db.Close()
+
+			err = dix.ClaimPool(db, poolID, username)
+			if err != nil {
+				die(err)
+			}
+
+			fmt.Println("claimed! round advances.")
+		},
+	}
+}
+
+func poolStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status <pool-id>",
+		Short: "show pool status",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			poolID := args[0]
+
+			db, err := dix.Opendb(dbpath)
+			if err != nil {
+				die(err)
+			}
+			defer db.Close()
+
+			pool, members, err := dix.PoolStatus(db, poolID)
+			if err != nil {
+				die(err)
+			}
+
+			symbol := dix.GetTokenSymbol(pool.Token)
+			fmt.Printf("Pool: %s (%s)\n", pool.Name, pool.ID)
+			fmt.Printf("Token: %s\n", symbol)
+			fmt.Printf("Contribution: %s %s/round\n", dix.FmtAmount(pool.Contribution, pool.Token), symbol)
+			fmt.Printf("Round: %d/%d\n", pool.Round, len(members))
+			fmt.Printf("Status: %s\n\n", pool.Status)
+
+			fmt.Printf("%-4s | %-14s | %-6s | %-7s\n", "#", "MEMBER", "PAID", "CLAIMED")
+			fmt.Println(strings.Repeat("-", 40))
+
+			for _, m := range members {
+				paid := "-"
+				if m.Paid {
+					paid = "yes"
+				}
+				claimed := "-"
+				if m.Claimed {
+					claimed = "yes"
+				}
+				winner := ""
+				if m.Order == pool.Round-1 {
+					winner = " <-- winner"
+				}
+				fmt.Printf("%-4d | %-14s | %-6s | %-7s%s\n", m.Order+1, m.Username, paid, claimed, winner)
+			}
+		},
+	}
+}
+
+func poolListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "list your pools",
+		Run: func(cmd *cobra.Command, args []string) {
+			db, err := dix.Opendb(dbpath)
+			if err != nil {
+				die(err)
+			}
+			defer db.Close()
+
+			pools, err := dix.ListPools(db)
+			if err != nil {
+				die(err)
+			}
+
+			if len(pools) == 0 {
+				fmt.Println("no pools")
+				return
+			}
+
+			fmt.Printf("%-12s | %-12s | %-6s | %-8s | %s\n", "ID", "NAME", "TOKEN", "CONTRIB", "STATUS")
+			fmt.Println(strings.Repeat("-", 60))
+
+			for _, p := range pools {
+				symbol := dix.GetTokenSymbol(p.Token)
+				fmt.Printf("%-12s | %-12s | %-6s | %-8s | %s\n",
+					p.ID,
+					truncTo(p.Name),
+					symbol,
+					dix.FmtAmount(p.Contribution, p.Token),
+					p.Status,
+				)
 			}
 		},
 	}
